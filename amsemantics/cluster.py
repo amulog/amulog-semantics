@@ -11,10 +11,13 @@ from .lda.base import LogTopicModel
 class TopicClustering:
 
     def __init__(self, model="gensim", redistribute=True,
-                 stop_words=None, random_seed=None, verbose=False):
+                 stop_words=None, random_seed=None,
+                 lda_n_topics=None, cluster_eps=None, verbose=False):
         self._model = model
         self._redistribute = redistribute
         self._random_seed = random_seed
+        self._given_n_topics = lda_n_topics
+        self._given_cluster_eps = cluster_eps
         self._verbose = verbose
         if stop_words is None:
             self._stop_words = []
@@ -56,12 +59,17 @@ class TopicClustering:
                 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
                 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0]
 
-    def param_tuning(self, documents, tuning_lda=True,
+    def param_tuning(self, documents,
                      min_samples=5, verbose=False):
-        if tuning_lda:
+        if self._given_n_topics is None:
             n_topic_candidates = self._get_n_topic_candidates(len(documents))
         else:
-            n_topic_candidates = [40, ]
+            n_topic_candidates = [self._given_n_topics, ]
+
+        if self._given_cluster_eps is None:
+            eps_candidates = self._get_eps_candidates()
+        else:
+            eps_candidates = [self._given_cluster_eps, ]
 
         loglda = self._lda_instance(documents)
 
@@ -71,7 +79,7 @@ class TopicClustering:
             loglda.fit(n_topics=n_topics)
             topic_matrix = loglda.corpus_topic_matrix()
 
-            for eps in self._get_eps_candidates():
+            for eps in eps_candidates:
                 clustering = DBSCAN(eps=eps, min_samples=min_samples,
                                     metric="cityblock")
                 clustering.fit(topic_matrix)
@@ -113,18 +121,25 @@ class TopicClustering:
             clusters = self._split_clusters(self._clustering)
 
         topn = self._tuning_rules["topn"]
-        tested_terms = self._tuning_rules["tested_terms"]
-        if self._tuning_rules["tested_terms"] == "topic":
-            tested_terms = loglda.corpus_topic_matrix(topn=topn)
-        elif self._tuning_rules["tested_terms"] == "cluster":
+        term_class = self._tuning_rules["term_class"]
+        if term_class == "topic":
+            tested_terms = loglda.all_topic_terms(topn=topn)
+        elif term_class == "cluster":
             tested_terms = self._all_cluster_terms(loglda, clusters,
                                                    topic_matrix, topn=topn)
+        else:
+            raise ValueError
+
         union_checker = {}
-        for w1, w2 in combinations(self._tuning_rules["union"], 2):
-            union_checker[(w1, w2)] = True
+        for rule in self._tuning_rules["union"]:
+            for w1, w2 in combinations(rule, 2):
+                union_checker[(w1, w2)] = True
         separation_checker = {}
-        for w1, w2 in combinations(self._tuning_rules["separation"], 2):
-            separation_checker[(w1, w2)] = True
+        for rule in self._tuning_rules["separation"]:
+            for w1, w2 in combinations(rule, 2):
+                separation_checker[(w1, w2)] = True
+        score_denom = len(union_checker) + len(separation_checker)
+        assert score_denom > 0, "bad tuning rule specification"
 
         for clsid, bestn in tested_terms.items():
             s_words = set(w for w, _ in bestn)
@@ -139,8 +154,7 @@ class TopicClustering:
 
         score = sum(1 for _, v in union_checker if v)
         score += sum(1 for _, v in separation_checker if v)
-        score = score / (len(union_checker) + len(separation_checker))
-        return score
+        return score / score_denom
 
     def set_tuning_rules(self, union_rules: List[List[str]],
                          separation_rules: List[List[str]],
@@ -200,13 +214,16 @@ class TopicClustering:
         return clusters
 
     def fit(self, documents):
-        n_topics, eps = self.param_tuning(
-            documents, tuning_lda=True,
-            min_samples=5, verbose=self._verbose
-        )
+        if self._given_n_topics is None or self._given_cluster_eps is None:
+            n_topics, eps = self.param_tuning(
+                documents, min_samples=5, verbose=self._verbose
+            )
+        else:
+            n_topics = self._given_n_topics
+            eps = self._given_cluster_eps
 
         self._loglda = self._lda_instance(documents)
-        self._loglda.fit()
+        self._loglda.fit(n_topics=n_topics)
         self._topic_matrix = self._loglda.corpus_topic_matrix()
 
         from sklearn.cluster import DBSCAN
