@@ -153,7 +153,7 @@ class Normalizer:
                 )
             elif fil == "remove_short_word":
                 current_seq = self.remove_short_word(
-                    sequence, self._th_word_length
+                    current_seq, self._th_word_length
                 )
             elif fil == "lemmatize_verbs":
                 current_seq = self.lemmatize_verbs(

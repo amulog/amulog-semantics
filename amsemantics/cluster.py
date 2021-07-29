@@ -12,12 +12,14 @@ class TopicClustering:
 
     def __init__(self, model="gensim", redistribute=True,
                  stop_words=None, random_seed=None,
-                 lda_n_topics=None, cluster_eps=None, verbose=False):
+                 lda_n_topics=None, cluster_eps=None,
+                 tuning_metrics="cluster", verbose=False):
         self._model = model
         self._redistribute = redistribute
         self._random_seed = random_seed
         self._given_n_topics = lda_n_topics
         self._given_cluster_eps = cluster_eps
+        self._tuning_metrics = tuning_metrics
         self._verbose = verbose
         if stop_words is None:
             self._stop_words = []
@@ -59,6 +61,23 @@ class TopicClustering:
                 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
                 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0]
 
+    def _tuning_metrics_score(self, clustering):
+        if self._tuning_metrics == "cluster":
+            # max clusters
+            return len(set(clustering.labels_))
+        elif self._tuning_metrics == "outlier":
+            # minimum outliers
+            n_docs = len(clustering.labels_)
+            n_outlier = sum(1 for label in clustering.labels_
+                            if label == -1)
+            return (n_docs - n_outlier) / n_docs
+        elif self._tuning_metrics == "both":
+            n_max_cluster = len(set(clustering.labels_))
+            n_docs = len(clustering.labels_)
+            n_outlier = sum(1 for label in clustering.labels_
+                            if label == -1)
+            return n_max_cluster * (n_docs - n_outlier) / n_docs
+
     def param_tuning(self, documents,
                      min_samples=5, verbose=False):
         if self._given_n_topics is None:
@@ -73,8 +92,8 @@ class TopicClustering:
 
         loglda = self._lda_instance(documents)
 
-        d_n_clusters = {}
-        d_scores = {}
+        d_metric_scores = {}
+        d_rule_scores = {}
         for n_topics in n_topic_candidates:
             loglda.fit(n_topics=n_topics)
             topic_matrix = loglda.corpus_topic_matrix()
@@ -85,28 +104,28 @@ class TopicClustering:
                 clustering.fit(topic_matrix)
 
                 params = (n_topics, eps)
-                d_n_clusters[params] = len(set(clustering.labels_))
+                d_metric_scores[params] = self._tuning_metrics_score(clustering)
                 if self._tuning_rules:
                     score = self.test_tuning_rules(loglda, clustering,
                                                    topic_matrix)
-                    d_scores[params] = score
+                    d_rule_scores[params] = score
                     if verbose:
-                        print(params, score, d_n_clusters[params])
+                        print(params, d_rule_scores[params], d_metric_scores[params])
                 else:
                     if verbose:
-                        print(params, d_n_clusters[params])
+                        print(params, d_metric_scores[params])
 
         if self._tuning_rules:
             # keep params that have maximum score
-            max_score = max(d_scores.values())
+            max_score = max(d_rule_scores.values())
             tmp = {}
-            for params, score in d_scores.items():
+            for params, score in d_rule_scores.items():
                 if score == max_score:
-                    tmp[params] = d_n_clusters[params]
-            d_n_clusters = tmp
+                    tmp[params] = d_metric_scores[params]
+            d_metric_scores = tmp
 
         # get params with maximum number of clusters
-        selected_param, _ = sorted(d_n_clusters.items(),
+        selected_param, _ = sorted(d_metric_scores.items(),
                                    key=lambda x: x[1], reverse=True)[0]
         if verbose:
             print("Selected {0}".format(selected_param))
