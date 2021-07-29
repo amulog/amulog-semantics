@@ -14,12 +14,13 @@ class Normalizer:
     _regex_remove_symbols = re.compile(r"[^a-zA-Z0-9]+")
 
     _filter_manual_replace = "manual_replace"
-    _filter_variable_replace = "variable_replace"
+    _filter_remove_variable = "remove_variable"
 
-    def __init__(self, filters, mreplacer_sources,
-                 vreplacer_source, host_alias_source,
-                 lemmatize_exception=None):
+    def __init__(self, filters, mreplacer_sources, vreplacer_source,
+                 host_alias_source=None, lemmatize_exception=None,
+                 th_word_length=1):
         self._filters = filters
+        self._th_word_length = th_word_length
 
         # init manual replacers
         n_manual_replacer = Counter(self._filters)[self._filter_manual_replace]
@@ -38,9 +39,12 @@ class Normalizer:
             self._mreplacers[rid] = self._parse_dict_file(fp)
 
         # init variable replacers
-        if self._filter_variable_replace in self._filters:
+        if self._filter_remove_variable in self._filters:
             from amulog import host_alias
-            ha = host_alias.HostAlias(host_alias_source)
+            if host_alias_source is None:
+                ha = None
+            else:
+                ha = host_alias.HostAlias(host_alias_source)
             self._vreplacer = lt_regex.VariableRegex(vreplacer_source, ha)
 
         # init wordnet lemmatizer
@@ -76,12 +80,16 @@ class Normalizer:
         return new_sequence
 
     @staticmethod
-    def replace_variable(sequence, replacer: lt_regex.VariableRegex):
+    def remove_variable(sequence, replacer: lt_regex.VariableRegex):
         new_sequence = []
         for w in sequence:
             if not replacer.match(w):
                 new_sequence.append(w)
         return new_sequence
+
+    @staticmethod
+    def remove_short_word(sequence: List[str], threshold):
+        return [w for w in sequence if len(w) > threshold]
 
     @classmethod
     def _strip_word_symbol(cls, word):
@@ -139,9 +147,13 @@ class Normalizer:
                 current_seq = self.manual_replace(
                     current_seq, self._mreplacers[self._mreplacer_idx[idx]]
                 )
-            elif fil == self._filter_variable_replace:
-                current_seq = self.replace_variable(
+            elif fil == self._filter_remove_variable:
+                current_seq = self.remove_variable(
                     current_seq, self._vreplacer
+                )
+            elif fil == "remove_short_word":
+                current_seq = self.remove_short_word(
+                    sequence, self._th_word_length
                 )
             elif fil == "lemmatize_verbs":
                 current_seq = self.lemmatize_verbs(
