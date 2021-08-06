@@ -1,3 +1,4 @@
+import os
 import re
 from collections import Counter
 from typing import Dict, List, Set
@@ -6,6 +7,10 @@ import nltk
 from nltk.stem.wordnet import WordNetLemmatizer
 
 from amulog import lt_regex
+
+
+DEFAULT_CONFIG = "/".join((os.path.dirname(os.path.abspath(__file__)),
+                          "config/word_dict/s5_specific_words_merged.txt"))
 
 
 class Normalizer:
