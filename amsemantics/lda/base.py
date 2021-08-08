@@ -18,6 +18,9 @@ class LogTopicModel(ABC):
         self._id2word: Dict[int, str] = {idx: w for idx, w
                                          in enumerate(self._vocabulary)}
 
+    def vocabulary(self):
+        return self._vocabulary
+
     def word2id(self, word: str):
         return self._word2id[word]
 

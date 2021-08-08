@@ -13,12 +13,14 @@ class TopicClustering:
     def __init__(self, model="gensim", redistribute=True,
                  stop_words=None, random_seed=None,
                  lda_n_topics=None, cluster_eps=None,
-                 tuning_metrics="cluster", verbose=False):
+                 cluster_size_min=5, tuning_metrics="cluster",
+                 verbose=False):
         self._model = model
         self._redistribute = redistribute
         self._random_seed = random_seed
         self._given_n_topics = lda_n_topics
         self._given_cluster_eps = cluster_eps
+        self._min_samples = cluster_size_min
         self._tuning_metrics = tuning_metrics
         self._verbose = verbose
         if stop_words is None:
@@ -53,7 +55,8 @@ class TopicClustering:
     @staticmethod
     def _get_n_topic_candidates(n_documents):
         import math
-        return list(range(10, int(math.sqrt(n_documents)) * 2, 10))
+        max_topics = min(int(math.sqrt(n_documents)) * 2, 60)
+        return list(range(10, max_topics, 10))
 
     @staticmethod
     def _get_eps_candidates():
@@ -61,7 +64,7 @@ class TopicClustering:
                 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
                 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0]
 
-    def _tuning_metrics_score(self, clustering):
+    def _tuning_metrics_score(self, clustering, verbose=False):
         if self._tuning_metrics == "cluster":
             # max clusters
             return len(set(clustering.labels_))
@@ -76,10 +79,18 @@ class TopicClustering:
             n_docs = len(clustering.labels_)
             n_outlier = sum(1 for label in clustering.labels_
                             if label == -1)
-            return n_max_cluster * (n_docs - n_outlier) / n_docs
+            outlier_ratio = n_outlier / n_docs
+            score = n_max_cluster ** 2 * (n_docs - n_outlier) / n_docs
+            if verbose:
+                print("max_cluster: {0}, outlier ratio: {1} -> {2}".format(
+                    n_max_cluster, outlier_ratio, score
+                ))
+            return score
 
     def param_tuning(self, documents,
-                     min_samples=5, verbose=False):
+                     min_samples=None, verbose=False):
+        if min_samples is None:
+            min_samples = self._min_samples
         if self._given_n_topics is None:
             n_topic_candidates = self._get_n_topic_candidates(len(documents))
         else:
@@ -104,7 +115,9 @@ class TopicClustering:
                 clustering.fit(topic_matrix)
 
                 params = (n_topics, eps)
-                d_metric_scores[params] = self._tuning_metrics_score(clustering)
+                d_metric_scores[params] = self._tuning_metrics_score(
+                    clustering, verbose=verbose
+                )
                 if self._tuning_rules:
                     score = self.test_tuning_rules(loglda, clustering,
                                                    topic_matrix)
@@ -235,7 +248,8 @@ class TopicClustering:
     def fit(self, documents):
         if self._given_n_topics is None or self._given_cluster_eps is None:
             n_topics, eps = self.param_tuning(
-                documents, min_samples=5, verbose=self._verbose
+                documents, min_samples=self._min_samples,
+                verbose=self._verbose
             )
         else:
             n_topics = self._given_n_topics
@@ -246,7 +260,7 @@ class TopicClustering:
         self._topic_matrix = self._loglda.corpus_topic_matrix()
 
         from sklearn.cluster import DBSCAN
-        self._clustering = DBSCAN(eps=eps, min_samples=5,
+        self._clustering = DBSCAN(eps=eps, min_samples=self._min_samples,
                                   metric="cityblock")
         self._clustering.fit(self._topic_matrix)
         if self._redistribute:

@@ -131,17 +131,17 @@ class Normalizer:
         return [token if token in exception else
                 lemmatizer.lemmatize(token, 'v')
                 for token in sequence
-                if token is not '']
+                if token != '']
 
     @staticmethod
     def lemmatize_nns(sequence,
                       lemmatizer: WordNetLemmatizer,
                       exception: Set[str]):
         return [token if token in exception else
-                token if nltk.pos_tag([token])[0][1] == "NNS" else
+                token if nltk.pos_tag([token])[0][1] != "NNS" else
                 lemmatizer.lemmatize(token)
                 for token in sequence
-                if token is not '']
+                if token != '']
 
     def process_line(self, sequence, verbose=False):
         current_seq = sequence[:]
