@@ -68,6 +68,8 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Topic :: Scientific/Engineering :: Information Analysis',
         'Topic :: Software Development :: Libraries :: Python Modules'],
+    cmdclass={"develop": Develop,
+              "install": Install},
     license='The 3-Clause BSD License',
   
     packages=find_packages(),
