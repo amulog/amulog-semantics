@@ -21,13 +21,15 @@ class Normalizer:
     _filter_manual_replace = "manual_replace"
     _filter_remove_variable = "remove_variable"
 
-    def __init__(self, filters, mreplacer_sources, vreplacer_source,
+    def __init__(self, filters, mreplacer_sources=None, vreplacer_source=None,
                  host_alias_source=None, lemmatize_exception=None,
                  th_word_length=1):
         self._filters = filters
         self._th_word_length = th_word_length
 
         # init manual replacers
+        if mreplacer_sources is None:
+            mreplacer_sources = []
         n_manual_replacer = Counter(self._filters)[self._filter_manual_replace]
         if n_manual_replacer != len(mreplacer_sources):
             msg = "{0} manual_replacer sources should be given".format(
@@ -45,6 +47,7 @@ class Normalizer:
 
         # init variable replacers
         if self._filter_remove_variable in self._filters:
+            assert vreplacer_source is not None
             from amulog import host_alias
             if host_alias_source is None:
                 ha = None

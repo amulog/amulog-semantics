@@ -10,19 +10,30 @@ from .lda.base import LogTopicModel
 
 class TopicClustering:
 
-    def __init__(self, model="gensim", redistribute=True,
-                 stop_words=None, random_seed=None,
+    def __init__(self, model="gensim",
+                 knowledge_sources=None,
+                 redistribute=True,
+                 stop_words=None,
+                 use_nltk_stopwords=False,
+                 use_sklearn_stopwords=False,
+                 random_seed=None,
                  lda_n_topics=None, cluster_eps=None,
                  cluster_size_min=5, tuning_metrics="cluster",
                  verbose=False):
         self._model = model
         self._redistribute = redistribute
+        self._use_nltk_stopwords = use_nltk_stopwords
+        self._use_sklearn_stopwords = use_sklearn_stopwords
         self._random_seed = random_seed
         self._given_n_topics = lda_n_topics
         self._given_cluster_eps = cluster_eps
         self._min_samples = cluster_size_min
         self._tuning_metrics = tuning_metrics
         self._verbose = verbose
+        if knowledge_sources is None:
+            self._knowledge_sources = ["self", ]
+        else:
+            self._knowledge_sources = knowledge_sources
         if stop_words is None:
             self._stop_words = []
         else:
@@ -44,13 +55,30 @@ class TopicClustering:
             from .lda import LogLDAgensim
             return LogLDAgensim(
                 documents,
+                random_seed=self._random_seed,
                 stop_words=self._stop_words,
-                random_seed=self._random_seed
+                use_nltk_stopwords=self._use_nltk_stopwords,
+                use_sklearn_stopwords=self._use_sklearn_stopwords
             )
         elif self._model == "gibbs":
             raise NotImplementedError
         else:
             raise ValueError
+
+    @property
+    def clusters(self):
+        if self._clusters is None:
+            raise ValueError("Try fit() first")
+        return self._clusters
+
+    @property
+    def cluster_labels(self):
+        ret = [-1] * len(self._clustering.labels_)
+        for cls, l_idx in self._clusters.items():
+            for idx in l_idx:
+                ret[idx] = cls
+        assert -1 not in ret
+        return ret
 
     @staticmethod
     def _get_n_topic_candidates(n_documents):
@@ -63,6 +91,17 @@ class TopicClustering:
         return [0.01, 0.03, 0.05, 0.07,
                 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
                 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, 7.0, 10.0]
+
+    def lda_search_param(self, training_docs):
+        n_topic_candidates = self._get_n_topic_candidates(len(training_docs))
+        loglda = self._lda_instance(training_docs)
+
+        for n_topics in n_topic_candidates:
+            loglda.fit(n_topics=n_topics)
+            corpus = loglda.corpus(training_docs)
+            lp = loglda.log_perplexity(corpus=corpus)
+            coherence = loglda.coherence(corpus=corpus)
+            yield [n_topics, lp, coherence]
 
     def _tuning_metrics_score(self, clustering, verbose=False):
         if self._tuning_metrics == "cluster":
@@ -87,12 +126,12 @@ class TopicClustering:
                 ))
             return score
 
-    def param_tuning(self, documents,
+    def param_tuning(self, training_docs, input_docs,
                      min_samples=None, verbose=False):
         if min_samples is None:
             min_samples = self._min_samples
         if self._given_n_topics is None:
-            n_topic_candidates = self._get_n_topic_candidates(len(documents))
+            n_topic_candidates = self._get_n_topic_candidates(len(training_docs))
         else:
             n_topic_candidates = [self._given_n_topics, ]
 
@@ -101,13 +140,16 @@ class TopicClustering:
         else:
             eps_candidates = [self._given_cluster_eps, ]
 
-        loglda = self._lda_instance(documents)
+        loglda = self._lda_instance(training_docs)
+        input_corpus = loglda.corpus(input_docs)
 
         d_metric_scores = {}
         d_rule_scores = {}
         for n_topics in n_topic_candidates:
             loglda.fit(n_topics=n_topics)
-            topic_matrix = loglda.corpus_topic_matrix()
+            topic_matrix = loglda.corpus_topic_matrix(input_corpus,
+                                                      with_mean=True,
+                                                      with_std=True)
 
             for eps in eps_candidates:
                 clustering = DBSCAN(eps=eps, min_samples=min_samples,
@@ -245,19 +287,25 @@ class TopicClustering:
         clusters[max(clusters.keys()) + 1] = outliers
         return clusters
 
-    def fit(self, documents):
+    def fit(self, input_docs, training_docs=None):
+        if training_docs is None:
+            training_docs = input_docs
         if self._given_n_topics is None or self._given_cluster_eps is None:
             n_topics, eps = self.param_tuning(
-                documents, min_samples=self._min_samples,
+                training_docs, input_docs,
+                min_samples=self._min_samples,
                 verbose=self._verbose
             )
         else:
             n_topics = self._given_n_topics
             eps = self._given_cluster_eps
 
-        self._loglda = self._lda_instance(documents)
+        self._loglda = self._lda_instance(training_docs)
         self._loglda.fit(n_topics=n_topics)
-        self._topic_matrix = self._loglda.corpus_topic_matrix()
+        input_corpus = self._loglda.corpus(input_docs)
+        self._topic_matrix = self._loglda.corpus_topic_matrix(input_corpus,
+                                                              with_mean=True,
+                                                              with_std=True)
 
         from sklearn.cluster import DBSCAN
         self._clustering = DBSCAN(eps=eps, min_samples=self._min_samples,
@@ -321,3 +369,14 @@ class TopicClustering:
             "topic_terms": self._loglda.all_topic_terms(topn),
             "cluster_terms": self.all_cluster_terms(topn),
         }
+
+    def show_pyldavis(self, mds="pcoa"):
+        return self._loglda.show_pyldavis(mds=mds)
+
+    def get_principal_components(self, input_docs, n_components=2,
+                                 with_mean=True, with_std=True):
+        corpus = self._loglda.corpus(input_docs)
+        return self._loglda.principal_components(
+            corpus, n_components=n_components,
+            with_mean=with_mean, with_std=with_std
+        )

@@ -12,16 +12,18 @@ class Install(_install):
     def run(self):
         _install.run(self)
         import nltk
-        nltk.download('wordnet')
-        nltk.download('averaged_perceptron_tagger')
+        nltk.download('wordnet')  # for nlpnorm
+        nltk.download('averaged_perceptron_tagger')  # for nlpnorm
+        nltk.download('stopwords')  # for source.rfcdoc
 
 
 class Develop(_develop):
     def run(self):
         _develop.run(self)
         import nltk
-        nltk.download('wordnet')
-        nltk.download('averaged_perceptron_tagger')
+        nltk.download('wordnet')  # for nlpnorm
+        nltk.download('averaged_perceptron_tagger')  # for nlpnorm
+        nltk.download('stopwords')  # for source.rfcdoc
 
 
 def load_readme():

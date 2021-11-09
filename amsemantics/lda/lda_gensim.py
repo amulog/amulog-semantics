@@ -1,4 +1,5 @@
-from collections import Counter
+import numpy as np
+from sklearn.preprocessing import scale
 
 from . import base
 
@@ -13,22 +14,43 @@ class LogLDAgensim(base.LogTopicModel):
     default_n_topics = 40
 
     def __init__(self, documents, n_topics=None, random_seed=None,
-                 stop_words=None):
+                 stop_words=None,
+                 use_nltk_stopwords=False,
+                 use_sklearn_stopwords=False):
         super().__init__(documents, random_seed=random_seed,
-                         stop_words=stop_words)
+                         stop_words=stop_words,
+                         use_nltk_stopwords=use_nltk_stopwords,
+                         use_sklearn_stopwords=use_sklearn_stopwords)
 
         self._n_topics = n_topics
-        self._corpus = self._init_corpus()
+
+        self._dictionary = self._init_dictionary(documents)
+        self._corpus = self.corpus(documents)
 
         self._ldamodel = None
+        self._vectorizer = None
 
-    def _init_corpus(self):
-        return [self._convert_corpus_elm(doc) for doc in self._documents]
+    def _init_dictionary(self, documents):
+        from gensim.corpora import Dictionary
+        d = Dictionary(documents)
 
-    def _convert_corpus_elm(self, doc):
-        l_wordidx = [self.word2id(w) for w in doc
-                     if w not in self._stop_words]
-        return list(Counter(l_wordidx).items())
+        bad_ids = []
+        for sword in self._stop_words:
+            if sword in d.token2id:
+                bad_ids.append(d.token2id[sword])
+        d.filter_tokens(bad_ids=bad_ids)
+
+        return d
+
+    def vocabulary(self):
+        return self._dictionary.token2id.keys()
+
+    def word2id(self, word: str):
+        assert self._dictionary is not None
+        return self._dictionary.token2id[word]
+
+    def id2word(self, corpus_idx: int):
+        return self._dictionary.id2token[corpus_idx]
 
     def fit(self, n_topics=None):
         if n_topics is None:
@@ -40,7 +62,7 @@ class LogLDAgensim(base.LogTopicModel):
         self._ldamodel = LdaModel(
             corpus=self._corpus,
             num_topics=n_topics,
-            id2word=self._id2word,
+            id2word=self._dictionary,
             chunksize=self.chunksize,
             minimum_probability=self.minimum_probability,
             iterations=self.iterations,
@@ -52,18 +74,54 @@ class LogLDAgensim(base.LogTopicModel):
     def get_topics(self):
         return self._ldamodel.get_topics()
 
-    def topic_vector(self, doc):
+    def topic_vector(self, doc, with_mean=False, with_std=False):
         corpus_elm = self._convert_corpus_elm(doc)
-        return self._ldamodel.inference([corpus_elm])[0][0]
+        v = self._ldamodel.inference([corpus_elm])[0][0]
+        v = scale(v, with_mean=with_mean, with_std=with_std)
+        return v
 
-    def corpus_topic_matrix(self):
-        return self._ldamodel.inference(self._corpus)[0]
+    def corpus_topic_matrix(self, corpus=None, with_mean=False, with_std=False):
+        if corpus is None:
+            corpus = self._corpus
+
+        matrix = self._ldamodel.inference(corpus)[0]
+        matrix = scale(matrix, axis=1, with_mean=with_mean, with_std=with_std)
+        return matrix
 
     def topic_terms(self, topic, topn=10):
-        return [(self._id2word[widx], val)
+        return [(self.id2word(widx), val)
                 for widx, val
                 in self._ldamodel.get_topic_terms(topic, topn=topn)]
 
     def all_topic_terms(self, topn=10):
         return {topic: self.topic_terms(topic, topn=topn)
                 for topic in range(self._ldamodel.num_topics)}
+
+    def log_perplexity(self, corpus=None):
+        if corpus is None:
+            corpus = self._corpus
+        return self._ldamodel.log_perplexity(corpus)
+
+    def perplexity(self, corpus=None):
+        if corpus is None:
+            corpus = self._corpus
+        # log_perplexity returns bound where p = e^(-bound)
+        # (gensim document says 2^(-bound), but not in gensim source code)
+        return np.exp(-self._ldamodel.log_perplexity(corpus))
+
+    def coherence(self, corpus=None):
+        if corpus is None:
+            corpus = self._corpus
+        from gensim.models import CoherenceModel
+        cm = CoherenceModel(self._ldamodel, corpus=corpus,
+                            dictionary=self._dictionary, coherence='u_mass')
+        return cm.get_coherence()
+
+    def show_pyldavis(self, mds="pcoa"):
+        import pyLDAvis.gensim_models
+        return pyLDAvis.gensim_models.prepare(
+            self._ldamodel,
+            self._corpus,
+            self._dictionary,
+            mds=mds
+        )
