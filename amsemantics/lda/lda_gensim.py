@@ -1,5 +1,5 @@
 import numpy as np
-from sklearn.preprocessing import scale
+from scipy.stats import zscore
 
 from . import base
 
@@ -30,6 +30,13 @@ class LogLDAgensim(base.LogTopicModel):
         self._ldamodel = None
         self._vectorizer = None
 
+    def load(self, filepath):
+        from gensim.models import LdaModel
+        self._ldamodel = LdaModel.load(filepath)
+
+    def dump(self, filepath):
+        self._ldamodel.save(filepath)
+
     def _init_dictionary(self, documents):
         from gensim.corpora import Dictionary
         d = Dictionary(documents)
@@ -46,11 +53,16 @@ class LogLDAgensim(base.LogTopicModel):
         return self._dictionary.token2id.keys()
 
     def word2id(self, word: str):
-        assert self._dictionary is not None
-        return self._dictionary.token2id[word]
+        if word in self._dictionary.token2id:
+            return self._dictionary.token2id[word]
+        else:
+            return None
 
     def id2word(self, corpus_idx: int):
-        return self._dictionary.id2token[corpus_idx]
+        if corpus_idx in self._dictionary.id2token:
+            return self._dictionary.id2token[corpus_idx]
+        else:
+            return None
 
     def fit(self, n_topics=None):
         if n_topics is None:
@@ -74,18 +86,24 @@ class LogLDAgensim(base.LogTopicModel):
     def get_topics(self):
         return self._ldamodel.get_topics()
 
-    def topic_vector(self, doc, with_mean=False, with_std=False):
+    def topic_vector(self, doc, use_zscore=False):
         corpus_elm = self._convert_corpus_elm(doc)
         v = self._ldamodel.inference([corpus_elm])[0][0]
-        v = scale(v, with_mean=with_mean, with_std=with_std)
+        # v = scale(v, with_mean=with_mean, with_std=with_std)
+        if use_zscore:
+            v = np.nan_to_num(zscore(v), nan=float(0))
         return v
 
-    def corpus_topic_matrix(self, corpus=None, with_mean=False, with_std=False):
+    def corpus_topic_matrix(self, corpus=None, use_zscore=False):
         if corpus is None:
             corpus = self._corpus
 
         matrix = self._ldamodel.inference(corpus)[0]
-        matrix = scale(matrix, axis=1, with_mean=with_mean, with_std=with_std)
+        # matrix = scale(matrix, axis=1, with_mean=with_mean, with_std=with_std)
+        if use_zscore:
+            matrix = np.nan_to_num(zscore(matrix, axis=1), nan=float(0))
+            if np.isnan(matrix).any().sum():
+                import pdb; pdb.set_trace()
         return matrix
 
     def topic_terms(self, topic, topn=10):

@@ -24,23 +24,32 @@ class LogTopicModel(ABC):
         self._pca = None
 
     @abstractmethod
+    def load(self, filepath):
+        raise NotImplementedError
+
+    @abstractmethod
+    def dump(self, filepath):
+        raise NotImplementedError
+
+    @abstractmethod
     def vocabulary(self):
         raise NotImplementedError
 
     @abstractmethod
-    def word2id(self, word: str):
+    def word2id(self, word: str) -> Optional[int]:
         raise NotImplementedError
 
     @abstractmethod
-    def id2word(self, corpus_idx: int):
+    def id2word(self, corpus_idx: int) -> Optional[str]:
         raise NotImplementedError
 
     def corpus(self, documents):
         return [self._convert_corpus_elm(doc) for doc in documents]
 
     def _convert_corpus_elm(self, doc):
+        vocabulary = self.vocabulary()
         l_wordidx = [self.word2id(w) for w in doc
-                     if w not in self._stop_words]
+                     if w in vocabulary and w not in self._stop_words]
         return list(Counter(l_wordidx).items())
 
     @abstractmethod
@@ -52,11 +61,11 @@ class LogTopicModel(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def topic_vector(self, doc: List[str], with_mean=False, with_std=False):
+    def topic_vector(self, doc: List[str], use_zscore=False):
         raise NotImplementedError
 
     @abstractmethod
-    def corpus_topic_matrix(self, corpus=None, with_mean=False, with_std=False):
+    def corpus_topic_matrix(self, corpus=None, use_zscore=False):
         raise NotImplementedError
 
     @abstractmethod
@@ -75,17 +84,17 @@ class LogTopicModel(ABC):
         raise RuntimeError("supporting gensim only")
 
     def principal_components(self, corpus, n_components=2,
-                             with_mean=True, with_std=True):
+                             use_zscore=False):
         if self._pca is None:
             from sklearn.decomposition import PCA
             self._pca = PCA(n_components=n_components,
                             random_state=self._random_seed)
-            base_matrix = self.corpus_topic_matrix(corpus=None,
-                                                   with_mean=with_mean,
-                                                   with_std=with_std)
+            base_matrix = self.corpus_topic_matrix(
+                corpus=None, use_zscore=use_zscore
+            )
             self._pca.fit(base_matrix)
 
-        matrix = self.corpus_topic_matrix(corpus=corpus,
-                                          with_mean=with_mean,
-                                          with_std=with_std)
+        matrix = self.corpus_topic_matrix(
+            corpus=corpus, use_zscore=use_zscore
+        )
         return self._pca.transform(matrix)

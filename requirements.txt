@@ -4,3 +4,4 @@ gensim
 tqdm
 nltk
 scikit-learn
+python-Levenshtein
