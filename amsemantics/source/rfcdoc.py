@@ -12,6 +12,7 @@ from nltk.corpus import stopwords
 
 from rfcyaml.RFC import RFC, RFCStatus
 
+from .base import Source
 from ..nlpnorm import Normalizer
 
 RFC_ID_MIN = 1
@@ -68,6 +69,48 @@ POST_REMOVE_REGEX = re.compile(
     r'^[a-z](\.\d\d?)+$|'
     r'^0x[0-9abcdef]+$'
 )
+
+
+class RFCSource(Source):
+
+    def __init__(self,
+                 document_unit="rfc",
+                 use_cache=False,
+                 cache_dir="/tmp",
+                 normalizer=None
+                 ):
+        kwargs = {
+            "use_cache": use_cache,
+            "cache_dir": cache_dir,
+            "normalizer": normalizer
+        }
+
+        if document_unit == "rfc":
+            self._loader = RFCLoader(**kwargs)
+        elif document_unit == "section":
+            self._loader = RFCSectionLoader(**kwargs)
+        elif document_unit == "line":
+            self._loader = RFCLinesLoader(**kwargs)
+        else:
+            raise ValueError("invalid document_unit")
+
+    @staticmethod
+    def _get_annotation(rfc):
+        description = "RFC{0} {1}".format(rfc.n, rfc.info.title)
+        return "RFC", description
+
+    def load(self, verbose=False):
+        for rfc in self._loader.iter_all():
+            try:
+                # if verbose:
+                #     print("loading RFC {0}".format(rfc.n))
+                docs = self._loader.get_document(rfc)
+                for document in docs:
+                    yield document, self._get_annotation(rfc)
+            except FileNotFoundError:
+                mes = "skip RFC {0}: line file not found".format(rfc.n)
+                if verbose:
+                    print(mes)
 
 
 class RFCLoader:
@@ -171,7 +214,7 @@ class RFCSectionLoader(RFCLoader):
     @staticmethod
     def _iter_components(rfc):
         for section in rfc.sections:
-            yield ignore_trivial_line(section.get_text())
+            yield ignore_trivial_line([section.get_text_all()])
 
 
 class RFCLinesLoader(RFCLoader):

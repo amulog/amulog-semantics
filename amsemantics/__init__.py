@@ -2,8 +2,8 @@
 """Semantic analysis extension of amulog.
 """
 
-__version__ = '0.0.8'
+__version__ = '0.1.0'
 
-from .lda import LogLDAgensim
-from .cluster import TopicClustering, TopicClusteringDBSCAN, TopicClusteringRecursiveDBSCAN
+from .classifier import SemanticClassifier
+from .cluster import TopicClustering, TopicClusteringDBSCAN, TopicClusteringRecursiveDBSCAN, ParameterTuning
 from .nlpnorm import Normalizer

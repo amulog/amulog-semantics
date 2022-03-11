@@ -14,6 +14,7 @@ class Install(_install):
         import nltk
         nltk.download('wordnet')  # for nlpnorm
         nltk.download('averaged_perceptron_tagger')  # for nlpnorm
+        nltk.download('omw-1.4')  # for nlpnorm test?
         nltk.download('stopwords')  # for source.rfcdoc
 
 
@@ -23,6 +24,7 @@ class Develop(_develop):
         import nltk
         nltk.download('wordnet')  # for nlpnorm
         nltk.download('averaged_perceptron_tagger')  # for nlpnorm
+        nltk.download('omw-1.4')  # for nlpnorm test?
         nltk.download('stopwords')  # for source.rfcdoc
 
 

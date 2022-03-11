@@ -41,7 +41,7 @@ class LogLDAGibbs(base.LogTopicModel):
     def topic_vector(self, doc: List[str], with_mean=False, with_std=False):
         raise NotImplementedError
 
-    def corpus_topic_matrix(self, corpus=None, with_mean=False, with_std=False):
+    def topic_matrix(self, corpus=None, with_mean=False, with_std=False):
         raise NotImplementedError
 
     def topic_terms(self, topic, topn=10):

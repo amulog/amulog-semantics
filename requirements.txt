@@ -1,7 +1,8 @@
+log2seq >= 0.2.5
+amulog
 numpy
 pandas
 gensim
 tqdm
 nltk
 scikit-learn
-python-Levenshtein
